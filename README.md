@@ -25,6 +25,7 @@ Nome da marca:
 
 ## Interface
 
+[Imagens no LVGL](https://github.com/insper-classroom/22b-emb-aps2-phodlonia/tree/main/img)
 ### Proposta UX 1 - C
 
 > - Mockup da interface:
