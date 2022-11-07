@@ -18,6 +18,11 @@ Nome da marca:
 
 - MovBike
 
+## Vídeos explicando a interface
+- [Tela 1](https://youtube.com/shorts/cOUBgSu6LxQ?feature=share)
+- [Tela 2](https://youtube.com/shorts/vnGgZUZ5e0E?feature=share)
+
+
 ## Interface
 
 ### Proposta UX 1 - C
