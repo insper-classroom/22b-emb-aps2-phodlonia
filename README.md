@@ -10,12 +10,13 @@ Mais detalhes no site da disciplina:
 
 Integrantes:
 
-- Nome 
-- Nome
+- Jonathan Sutton 
+- Ricardo Israel
+- Rodrigo Mattar
 
 Nome da marca:
 
-- Nome e logo?
+- MovBike
 
 ## Interface
 
