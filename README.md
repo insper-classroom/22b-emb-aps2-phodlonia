@@ -10,15 +10,22 @@ Mais detalhes no site da disciplina:
 
 Integrantes:
 
-- Nome 
-- Nome
+- Jonathan Sutton 
+- Ricardo Israel
+- Rodrigo Mattar
 
 Nome da marca:
 
-- Nome e logo?
+- MovBike
+
+## Vídeos explicando a interface
+- [Tela 1](https://youtube.com/shorts/cOUBgSu6LxQ?feature=share)
+- [Tela 2](https://youtube.com/shorts/vnGgZUZ5e0E?feature=share)
+
 
 ## Interface
 
+[Imagens no LVGL](https://github.com/insper-classroom/22b-emb-aps2-phodlonia/tree/main/img)
 ### Proposta UX 1 - C
 
 > - Mockup da interface:
