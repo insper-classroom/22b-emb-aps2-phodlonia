@@ -25,12 +25,25 @@ static lv_color_t buf_1[LV_HOR_RES_MAX * LV_VER_RES_MAX];
 static lv_disp_drv_t disp_drv;          /*A variable to hold the drivers. Must be static or global.*/
 static lv_indev_drv_t indev_drv;
 
+// Fonts
+// LV_FONT_DECLARE(roboto_bold_15);
+// LV_FONT_DECLARE(roboto_bold_24);
+// LV_FONT_DECLARE(roboto_bold_32);
+// LV_FONT_DECLARE(roboto_bold_72);
+// LV_FONT_DECLARE(roboto_regular_20);
+// LV_FONT_DECLARE(roboto_regular_32);
+// LV_FONT_DECLARE(roboto_regular_15
+
+
 //screens
 static lv_obj_t * scr1;  // screen 1
 static lv_obj_t * scr2;  // screen 2
 
 //screen2 objs
 lv_obj_t * diameter_label;
+lv_obj_t * image_btn_settings;
+lv_obj_t * settings_label;
+lv_obj_t * logo_label;
 lv_obj_t * diameter_value_label;
 lv_obj_t * btn_plus;
 lv_obj_t * btn_plus_label;
@@ -39,17 +52,63 @@ lv_obj_t * btn_minus;
 lv_obj_t * btn_back;
 lv_obj_t * btn_back_label;
 
+
 //screen 1 objs
 lv_obj_t * labelClock;
 lv_obj_t * status_btn_label;
 lv_obj_t * status_btn;
+lv_obj_t * image_logo; //OK
+lv_obj_t * label_time; //OK
+lv_obj_t * label_current_speed; //OK
+lv_obj_t * label_current_speed_unit; //OK
+lv_obj_t * image_speed_up; // OK
+lv_obj_t * image_speed_down; // OK
+lv_obj_t * image_speed_equal; // OK
+lv_obj_t * label_current_route; //OK
+lv_obj_t * image_current_route_on; // OK
+lv_obj_t * image_current_route_off; // OK
+lv_obj_t * image_current_route_distance; // OK
+lv_obj_t * label_current_route_distance; // OK
+lv_obj_t * image_current_route_speed; // OK
+lv_obj_t * label_current_route_speed; // OK
+lv_obj_t * image_current_route_time; // OK
+lv_obj_t * label_current_route_time; // OK
+lv_obj_t * border_btn_reset; // OK
+lv_obj_t * image_btn_reset; // OK
+lv_obj_t * label_btn_reset; // OK
+lv_obj_t * border_btn_play; // OK
+lv_obj_t * image_btn_play; // OK
+lv_obj_t * label_btn_play; // OK
+lv_obj_t * border_btn_stop; // OK
+lv_obj_t * image_btn_stop; // OK
+lv_obj_t * label_btn_stop; // OK
+lv_obj_t * image_btn_settings; // OK
+lv_obj_t * image_square_bg_up; // OK
+lv_obj_t * image_square_bg_down; // OK
+lv_obj_t * image_square_bg_equal; // OK
+lv_obj_t * stop_btn;
+lv_obj_t * stop_label;
+lv_obj_t * play_btn;
+lv_obj_t * play_label;
+lv_obj_t * reset_btn;
+lv_obj_t * reset_label;
+lv_obj_t * label_current_accelaration;
+lv_obj_t * up_btn;
+lv_obj_t * up_label;
+lv_obj_t * down_btn;
+lv_obj_t * down_label;
 
+
+//Semaphores
+SemaphoreHandle_t xSemaphoreRTC;
 
 //Queues
 QueueHandle_t xQueueClk;
+QueueHandle_t xQueuePulse;
 
 //flags
-volatile int diameter_value_flag = 26; 
+volatile int diameter_value_flag = 26;
+volatile int acceleration = 0;
 volatile int flag_screen = 0;
 volatile int power = 1;
 volatile char flag_rtc_second = 0;
@@ -57,6 +116,7 @@ volatile char counter = 0;
 volatile char clk_config = 0;
 volatile 	uint32_t current_hour, current_min, current_sec;
 volatile uint32_t current_year, current_month, current_day, current_week;
+void but_callBack1(void);
 
 //calendar
 typedef struct  {
@@ -71,6 +131,23 @@ typedef struct  {
 
 void RTC_init(Rtc *rtc, uint32_t id_rtc, calendar t, uint32_t irq_type);
 
+volatile float dt = 0;
+
+// definindo frequencia e pi
+#define	FREQ 100.0
+#define PI 3.142857
+
+//DFINICAO DOS PINOS DOS SENSORES
+#define MAG_PIO				PIOB
+#define MAG_PIO_ID			ID_PIOB
+#define MAG_IDX				3
+#define MAG_IDX_MASK		(1 << MAG_IDX)
+
+#define PINO_PIOC			PIOC
+#define PINO_ID_PIOC		ID_PIOC
+#define PIOC_IDX			31
+#define PIO_PC31_MASK		(1 << PIOC_IDX)
+
 
 /************************************************************************/
 /* RTOS                                                                 */
@@ -81,6 +158,9 @@ void RTC_init(Rtc *rtc, uint32_t id_rtc, calendar t, uint32_t irq_type);
 
 #define TASK_RTC_STACK_SIZE                (1024*6/sizeof(portSTACK_TYPE))
 #define TASK_RTC_STACK_PRIORITY            (tskIDLE_PRIORITY)
+
+#define TASK_CLOCK_STACK_SIZE             		(1024*6/sizeof(portSTACK_TYPE))
+#define TASK_CLOCK_STACK_PRIORITY            	(tskIDLE_PRIORITY)
 
 extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,  signed char *pcTaskName);
 extern void vApplicationIdleHook(void);
@@ -141,21 +221,77 @@ void lv_ex_btn_1(void) {
 /************************************************************************/
 /* HANDLERS                                                                */
 /************************************************************************/
+void io_init(void)
+{
+	pmc_enable_periph_clk(MAG_PIO_ID);
+	pio_configure(MAG_PIO, PIO_INPUT, MAG_IDX_MASK, PIO_IT_RISE_EDGE);
+	pio_handler_set(MAG_PIO, MAG_PIO_ID, MAG_IDX_MASK, PIO_IT_FALL_EDGE, but_callBack1);
+	pio_enable_interrupt(MAG_PIO, MAG_IDX_MASK);
+	pio_get_interrupt_status(MAG_PIO);
+	NVIC_EnableIRQ(MAG_PIO_ID);
+	NVIC_SetPriority(MAG_PIO_ID, 4);
+}
+
+static void RTT_init(float freqPrescale, uint32_t IrqNPulses, uint32_t rttIRQSource) {
+
+	uint16_t pllPreScale = (int) (((float) 32768) / freqPrescale);
+	
+	//rtt_sel_source(RTT, false);
+	//rtt_init(RTT, pllPreScale);
+	
+	if (rttIRQSource & RTT_MR_ALMIEN) {
+		uint32_t ul_previous_time;
+		ul_previous_time = rtt_read_timer_value(RTT);
+		while (ul_previous_time == rtt_read_timer_value(RTT));
+		rtt_write_alarm_time(RTT, IrqNPulses+ul_previous_time);
+	}
+
+	/* config NVIC */
+	NVIC_DisableIRQ(RTT_IRQn);
+	NVIC_ClearPendingIRQ(RTT_IRQn);
+	NVIC_SetPriority(RTT_IRQn, 4);
+	NVIC_EnableIRQ(RTT_IRQn);
+
+	/* Enable RTT interrupt */
+	//if (rttIRQSource & (RTT_MR_RTTINCIEN | RTT_MR_ALMIEN))
+	//rtt_enable_interrupt(RTT, rttIRQSource);
+	//else
+	//rtt_disable_interrupt(RTT, RTT_MR_RTTINCIEN | RTT_MR_ALMIEN);
+	
+}
+
+void RTC_init(Rtc *rtc, uint32_t id_rtc, calendar t, uint32_t irq_type) {
+	pmc_enable_periph_clk(ID_RTC);
+
+	/* Default RTC configuration, 24-hour mode */
+	rtc_set_hour_mode(rtc, 0);
+	rtc_set_date(rtc, t.year, t.month, t.day, t.week);
+	rtc_set_time(rtc, t.hour, t.minute, t.second);
+
+	/* Configure RTC interrupts */
+	NVIC_DisableIRQ(id_rtc);
+	NVIC_ClearPendingIRQ(id_rtc);
+	NVIC_SetPriority(id_rtc, 4);
+	NVIC_EnableIRQ(id_rtc);
+
+	rtc_enable_interrupt(rtc,  irq_type);
+}
+
 void RTC_Handler(void) {
 	uint32_t ul_status = rtc_get_status(RTC);
+	
+	/* Time or date alarm */
+	if ((ul_status & RTC_SR_ALARM) == RTC_SR_ALARM) {
+		// o código para irq de alame vem aqui
+	}
 	
 	/* second tick */
 	if ((ul_status & RTC_SR_SEC) == RTC_SR_SEC) {
 		// o código para irq de segundo vem aqui
-		flag_rtc_second = 1;
 		BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-		xQueueSendFromISR(xQueueClk, &flag_rtc_second, &xHigherPriorityTaskWoken);
+		xSemaphoreGiveFromISR(xSemaphoreRTC, &xHigherPriorityTaskWoken);
 	}
 	
-	/* Time or date alarm */
-	if ((ul_status & RTC_SR_ALARM) == RTC_SR_ALARM) {
-	}
-
 	rtc_clear_status(RTC, RTC_SCCR_SECCLR);
 	rtc_clear_status(RTC, RTC_SCCR_ALRCLR);
 	rtc_clear_status(RTC, RTC_SCCR_ACKCLR);
@@ -217,6 +353,21 @@ static void screen_handler(lv_event_t * e){
 }
 
 /************************************************************************/
+/* CALLBACKS                                                               */
+/************************************************************************/
+
+void but_callBack1(void){
+	// chegou pulso
+	
+	//int dt = rtt_read_timer_value(RTT)       ;///FREQ;
+	BaseType_t	xHigherPriorityTaskWoken = pdFALSE;
+	xQueueSendFromISR(xQueuePulse,&dt,0);
+	RTT_init(FREQ, 0 , RTT_SR_RTTINC);
+}
+
+
+
+/************************************************************************/
 /* FUNCTIONS UTILS                                                                */
 /************************************************************************/
 
@@ -250,7 +401,7 @@ void lv_screen2(void){
 	lv_obj_add_event_cb(btn_plus, bigger_diameter_handler , LV_EVENT_ALL, NULL);
 	lv_obj_set_height(btn_plus, 45);
 	lv_obj_set_width(btn_plus, 80);
-	lv_obj_align(btn_plus, LV_ALIGN_BOTTOM_MID ,-45, -40);
+	lv_obj_align(btn_plus, LV_ALIGN_BOTTOM_MID ,-45, -100);
 	btn_plus_label = lv_label_create(btn_plus);
 	lv_label_set_text(btn_plus_label, LV_SYMBOL_PLUS);
 	lv_obj_center(btn_plus_label);
@@ -259,7 +410,7 @@ void lv_screen2(void){
 	lv_obj_add_event_cb(btn_minus, smaller_diameter_handler , LV_EVENT_ALL, NULL);
 	lv_obj_set_height(btn_minus, 45);
 	lv_obj_set_width(btn_minus, 80);
-	lv_obj_align(btn_minus, LV_ALIGN_BOTTOM_MID, 45, -40);
+	lv_obj_align(btn_minus, LV_ALIGN_BOTTOM_MID, 45, -100);
 	btn_minus_label = lv_label_create(btn_minus);
 	lv_label_set_text(btn_minus_label, LV_SYMBOL_MINUS);
 	lv_obj_center(btn_minus_label);
@@ -267,9 +418,9 @@ void lv_screen2(void){
 	//criando botao voltar
 	btn_back = lv_btn_create(scr2);
 	lv_obj_add_event_cb(btn_back, screen_handler , LV_EVENT_ALL, NULL);
-	//lv_obj_set_height(btn_back, 35);
-	//lv_obj_set_width(btn_back, 80);
-	lv_obj_align(btn_back, LV_ALIGN_BOTTOM_LEFT, 0 , 0);
+	lv_obj_set_height(btn_back, 45);
+	lv_obj_set_width(btn_back, 80);
+	lv_obj_align(btn_back, LV_ALIGN_BOTTOM_MID, 0 , -30);
 	btn_back_label = lv_label_create(btn_back);
 	lv_label_set_text(btn_back_label, LV_SYMBOL_HOME);
 	lv_obj_center(btn_back_label);
@@ -278,25 +429,112 @@ void lv_screen2(void){
 void lv_screen1(void){
 	static lv_style_t btn_status_style;
 	scr1 = lv_obj_create(NULL);
+
+	// Configs iniciais
+	static lv_style_t style;
+	lv_style_init(&style);
+
+	// LOGO
+	logo_label = lv_label_create(scr1);
+	lv_label_set_text(logo_label, "BICITECH");
+	lv_obj_align(logo_label,LV_ALIGN_TOP_LEFT, 0, 0);
+
+	//CONFIG BUTTON
+	image_btn_settings = lv_btn_create(scr1);
+	lv_obj_add_event_cb(image_btn_settings, screen_handler, LV_EVENT_ALL, NULL);
+	lv_obj_set_height(image_btn_settings, 45);
+	lv_obj_set_width(image_btn_settings, 80);
+	lv_obj_align(image_btn_settings, LV_ALIGN_TOP_RIGHT, 0 , 0);
+	//Config byn label
+	settings_label = lv_label_create(image_btn_settings);
+	lv_label_set_text(settings_label, LV_SYMBOL_SETTINGS);
+	lv_obj_center(settings_label);
+
+	// Label hora
+	label_time = lv_label_create(scr1);
+	lv_obj_align(label_time, LV_ALIGN_CENTER, 0, -70);
+	lv_obj_set_style_text_font(label_time, LV_FONT_DEFAULT, LV_STATE_DEFAULT);
+	lv_obj_set_style_text_color(label_time, lv_color_black(), LV_STATE_DEFAULT);
+	lv_label_set_text_fmt(label_time, "%s", "13:18:03");
+
+	// CURRENT SPEED TEXT
+	label_current_speed = lv_label_create(scr1);
+	lv_obj_align(label_current_speed, LV_ALIGN_CENTER, -30, -30);
+	lv_obj_set_style_text_font(label_current_speed, LV_FONT_DEFAULT, LV_STATE_DEFAULT);
+	lv_obj_set_style_text_color(label_current_speed, lv_color_black(), LV_STATE_DEFAULT);
+	lv_label_set_text_fmt(label_current_speed, "%d", 23);
+
+	// CURRENT SPEED UNITS TEXT
+	label_current_speed_unit = lv_label_create(scr1);
+	lv_obj_align_to(label_current_speed_unit, label_current_speed, LV_ALIGN_OUT_RIGHT_BOTTOM, 0, 0);
+	lv_obj_set_style_text_font(label_current_speed_unit, LV_FONT_DEFAULT, LV_STATE_DEFAULT);
+	lv_obj_set_style_text_color(label_current_speed_unit, lv_color_black(), LV_STATE_DEFAULT);
+	lv_label_set_text_fmt(label_current_speed_unit, "%s", "km/h");
 	
-	lv_style_init(&btn_status_style);
-	//lv_style_set_bg_color(&btn_status_style, lv_palette_main(LV_PALETTE_NONE));
-	lv_style_set_border_color(&btn_status_style, lv_palette_main(LV_PALETTE_DEEP_PURPLE));
-	lv_style_set_border_width(&btn_status_style, 2);
-	lv_style_set_width(&btn_status_style, 120);
+	//style UP speed btn
+	static lv_style_t style1;
 	
-	status_btn = lv_btn_create(scr1);
-	lv_obj_add_event_cb(status_btn, event_handler, LV_EVENT_ALL, NULL);
-	lv_obj_align(status_btn, LV_ALIGN_TOP_LEFT, 0, 0);
-	lv_obj_add_style(status_btn, &btn_status_style, 0);
+	//UP SPEED BTN
+	up_btn = lv_btn_create(scr1);
+	lv_obj_add_event_cb(up_btn, screen_handler, LV_EVENT_ALL, NULL); //missing reset event handler
+	lv_obj_set_height(up_btn, 55);
+	lv_obj_set_width(up_btn, 50);
+	lv_obj_align(up_btn, LV_ALIGN_CENTER, 0 , 30);
+	//Up speed btn label
+	up_label = lv_label_create(up_btn);
+	if(acceleration>0){
+		lv_label_set_text(up_label,LV_SYMBOL_UP);
+		//lv_style_set_bg_color(&style1, LV_STATE_DEFAULT, LV_COLOR_BLUE); //put green hex color
+	}else if (acceleration<0){
+		lv_label_set_text(up_label, LV_SYMBOL_DOWN);
+		//lv_style_set_bg_color(&style1, LV_STATE_DEFAULT, lv_color_hex(0xff0000));
+	}else{
+		lv_label_set_text(up_label, acceleration>0?LV_SYMBOL_UP:LV_SYMBOL_MINUS);
+		//lv_style_set_bg_color(&style1, LV_STATE_DEFAULT, lv_color_hex(0xff0000)); //put gray hex color
+	}
 	
-	status_btn_label = lv_label_create(status_btn);
-	//lv_obj_set_style_text_font(status_btn_label, LV_FONT_MONTSERRAT_14, LV_STATE_DEFAULT);
-	lv_label_set_text(status_btn_label, power ? "status: on" : "status: off");
-	lv_obj_align(status_btn_label, LV_ALIGN_LEFT_MID, 0, 0);
+	lv_obj_center(up_label);
+	lv_obj_add_style(up_btn, LV_PART_MAIN, &style1); 
+	
+
+	//CURRENT ACCELERATION TEXT
+// 	label_current_accelaration = lv_label_create(scr1);
+// 	lv_obj_align(label_current_accelaration, LV_ALIGN_CENTER, -20, 0);
+// 	lv_obj_set_style_text_font(label_current_accelaration, LV_FONT_DEFAULT, LV_STATE_DEFAULT);
+// 	lv_obj_set_style_text_color(label_current_accelaration, lv_color_black(), LV_STATE_DEFAULT);
+// 	lv_label_set_text_fmt(label_current_accelaration, "%d", 23	//RESET BUTTON
+	reset_btn = lv_btn_create(scr1);
+	lv_obj_add_event_cb(reset_btn, screen_handler, LV_EVENT_ALL, NULL); //missing reset event handler
+	lv_obj_set_height(reset_btn, 55);
+	lv_obj_set_width(reset_btn, 50);
+	lv_obj_align(reset_btn, LV_ALIGN_BOTTOM_LEFT, 0 , -10);
+	//Reset btn label
+	reset_label = lv_label_create(reset_btn);
+	lv_label_set_text(reset_label, LV_SYMBOL_REFRESH);
+	lv_obj_center(reset_label);
+	
+	//PLAY BUTTON
+	play_btn = lv_btn_create(scr1);
+	lv_obj_add_event_cb(play_btn, screen_handler, LV_EVENT_ALL, NULL); //missing play event handler
+	lv_obj_set_height(play_btn, 55);
+	lv_obj_set_width(play_btn, 50);
+	lv_obj_align(play_btn, LV_ALIGN_BOTTOM_MID, 0 , -10);
+	//Play btn label
+	play_label = lv_label_create(play_btn);
+	lv_label_set_text(play_label, LV_SYMBOL_PLAY);
+	lv_obj_center(play_label);
 	
 	
-	
+	//STOP BUTTON
+	stop_btn = lv_btn_create(scr1);
+	lv_obj_add_event_cb(stop_btn, screen_handler, LV_EVENT_ALL, NULL); //missing stop event handler
+	lv_obj_set_height(stop_btn, 55);
+	lv_obj_set_width(stop_btn, 50);
+	lv_obj_align(stop_btn, LV_ALIGN_BOTTOM_RIGHT, 0 , -10);
+	//Stop btn label
+	stop_label = lv_label_create(stop_btn);
+	lv_label_set_text(stop_label, LV_SYMBOL_STOP);
+	lv_obj_center(stop_label);
 	
 }
 
@@ -305,16 +543,36 @@ void lv_screen1(void){
 /* TASKS                                                                */
 /************************************************************************/
 
+static void task_clock(void *pvParameters) {
+	calendar rtc_initial = {2018, 3, 19, 12, 15, 45 ,1};
+	RTC_init(RTC, ID_RTC, rtc_initial, RTC_IER_SECEN);
+
+	for (;;)  {
+		if(xSemaphoreTake(xSemaphoreRTC, 300)){
+			printf("received semmaphore rtc");
+			uint32_t current_hour, current_min, current_sec;
+			rtc_get_time(RTC, &current_hour, &current_min, &current_sec);
+			printf("[RELOGIO] %02d:%02d:%02d\n", current_hour, current_min, current_sec);
+			
+			if(current_sec % 2 == 0){
+				lv_label_set_text_fmt(label_time, "%02d:%02d:%02d", current_hour, current_min, current_sec);
+				} else {
+				lv_label_set_text_fmt(label_time, "%02d %02d %02d", current_hour, current_min, current_sec);
+			}
+		}
+	}
+}
+
 static void task_update(void *pvParameters){
-	 for (;;)  {
-		 if(flag_screen){
-			 lv_scr_load(scr1); // exibe tela 1
-			 vTaskDelay(500);
-		 }else{
-			 lv_scr_load(scr2); // exibe tela 2
-			 vTaskDelay(500);
-		 }
-	 }
+	for (;;)  {
+		if(flag_screen){
+			lv_scr_load(scr1); // exibe tela 1
+			vTaskDelay(500);
+			}else{
+			lv_scr_load(scr2); // exibe tela 2
+			vTaskDelay(500);
+		}
+	}
 }
 
 
@@ -326,10 +584,10 @@ static void task_lcd(void *pvParameters) {
 	
 
 	for (;;)  {
-// 		if (power == 1){
-// 			lv_obj_clean(scr1);
-// 			lv_obj_clean(scr2);
-// 		}
+		// 		if (power == 1){
+		// 			lv_obj_clean(scr1);
+		// 			lv_obj_clean(scr2);
+		// 		}
 		lv_tick_inc(50);
 		lv_task_handler();
 		vTaskDelay(50);
@@ -361,27 +619,6 @@ static void task_rtc(void *pvParameters) {
 /************************************************************************/
 /* configs                                                              */
 /************************************************************************/
-
-void RTC_init(Rtc *rtc, uint32_t id_rtc, calendar t, uint32_t irq_type) {
-	/* Configura o PMC */
-	pmc_enable_periph_clk(ID_RTC);
-
-	/* Default RTC configuration, 24-hour mode */
-	rtc_set_hour_mode(rtc, 0);
-
-	/* Configura data e hora manualmente */
-	rtc_set_date(rtc, t.year, t.month, t.day, t.week);
-	rtc_set_time(rtc, t.hour, t.minute, t.second);
-
-	/* Configure RTC interrupts */
-	NVIC_DisableIRQ(id_rtc);
-	NVIC_ClearPendingIRQ(id_rtc);
-	NVIC_SetPriority(id_rtc, 4);
-	NVIC_EnableIRQ(id_rtc);
-
-	/* Ativa interrupcao via alarme */
-	rtc_enable_interrupt(rtc,  irq_type);
-}
 
 static void configure_lcd(void) {
 	/**LCD pin configure on SPI*/
@@ -428,9 +665,9 @@ void my_input_read(lv_indev_drv_t * drv, lv_indev_data_t*data) {
 	int px, py, pressed;
 	
 	if (readPoint(&px, &py))
-		data->state = LV_INDEV_STATE_PRESSED;
+	data->state = LV_INDEV_STATE_PRESSED;
 	else
-		data->state = LV_INDEV_STATE_RELEASED; 
+	data->state = LV_INDEV_STATE_RELEASED;
 	
 	data->point.x = py;
 	data->point.y = 320-px;
@@ -464,6 +701,8 @@ int main(void) {
 	board_init();
 	sysclk_init();
 	configure_console();
+	
+	io_init();
 
 	/* LCd, touch and lvgl init*/
 	configure_lcd();
@@ -474,10 +713,18 @@ int main(void) {
 	xQueueClk = xQueueCreate(32, sizeof(uint32_t));
 	if (xQueueClk == NULL)
 	printf("Criação da Queue falhou");
+	
+	xSemaphoreRTC = xSemaphoreCreateBinary();
+
+	xQueuePulse = xQueueCreate(100, sizeof(int));
 
 	/* Create task to control oled */
 	if (xTaskCreate(task_lcd, "LCD", TASK_LCD_STACK_SIZE, NULL, TASK_LCD_STACK_PRIORITY, NULL) != pdPASS) {
 		printf("Failed to create lcd task\r\n");
+	}
+	
+	if (xTaskCreate(task_clock, "clock", TASK_CLOCK_STACK_SIZE, NULL, TASK_CLOCK_STACK_PRIORITY, NULL) != pdPASS) {
+		printf("Failed to create clock task\r\n");
 	}
 	
 	if (xTaskCreate(task_update, "Update", TASK_LCD_STACK_SIZE, NULL, TASK_LCD_STACK_PRIORITY, NULL) != pdPASS) {
