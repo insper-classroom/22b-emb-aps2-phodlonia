@@ -134,6 +134,9 @@ volatile float dt = 0;
 #define TASK_RTC_STACK_SIZE                (1024*6/sizeof(portSTACK_TYPE))
 #define TASK_RTC_STACK_PRIORITY            (tskIDLE_PRIORITY)
 
+#define TASK_MEASURES_STACK_SIZE             	(1024*6/sizeof(portSTACK_TYPE))
+#define TASK_MEASURES_STACK_PRIORITY            (tskIDLE_PRIORITY)
+
 #define TASK_CLOCK_STACK_SIZE             		(1024*6/sizeof(portSTACK_TYPE))
 #define TASK_CLOCK_STACK_PRIORITY            	(tskIDLE_PRIORITY)
 
@@ -435,17 +438,18 @@ void lv_screen1(void){
 	lv_obj_align(label_current_speed, LV_ALIGN_CENTER, -30, -30);
 	lv_obj_set_style_text_font(label_current_speed, LV_FONT_DEFAULT, LV_STATE_DEFAULT);
 	lv_obj_set_style_text_color(label_current_speed, lv_color_black(), LV_STATE_DEFAULT);
-	lv_label_set_text_fmt(label_current_speed, "%d", 23);
+	lv_label_set_text_fmt(label_current_speed, "%d", 00);
 
 	// CURRENT SPEED UNITS TEXT
 	label_current_speed_unit = lv_label_create(scr1);
-	lv_obj_align_to(label_current_speed_unit, label_current_speed, LV_ALIGN_OUT_RIGHT_BOTTOM, 0, 0);
+	lv_obj_align_to(label_current_speed_unit, label_current_speed, LV_ALIGN_OUT_RIGHT_BOTTOM, 5, 0);
 	lv_obj_set_style_text_font(label_current_speed_unit, LV_FONT_DEFAULT, LV_STATE_DEFAULT);
 	lv_obj_set_style_text_color(label_current_speed_unit, lv_color_black(), LV_STATE_DEFAULT);
 	lv_label_set_text_fmt(label_current_speed_unit, "%s", "km/h");
 	
 	//style UP speed btn
 	static lv_style_t style1;
+	lv_style_init(&style1);
 	
 	//UP SPEED BTN
 	up_btn = lv_btn_create(scr1);
@@ -457,17 +461,18 @@ void lv_screen1(void){
 	up_label = lv_label_create(up_btn);
 	if(acceleration>0){
 		lv_label_set_text(up_label,LV_SYMBOL_UP);
-		//lv_style_set_bg_color(&style1, LV_STATE_DEFAULT, LV_COLOR_BLUE); //put green hex color
+		lv_style_set_bg_color(&style1, lv_color_hex(0x7cfc00)); 
 	}else if (acceleration<0){
 		lv_label_set_text(up_label, LV_SYMBOL_DOWN);
-		//lv_style_set_bg_color(&style1, LV_STATE_DEFAULT, lv_color_hex(0xff0000));
+		lv_style_set_bg_color(&style1, lv_color_hex(0xff0000));
 	}else{
-		lv_label_set_text(up_label, acceleration>0?LV_SYMBOL_UP:LV_SYMBOL_MINUS);
-		//lv_style_set_bg_color(&style1, LV_STATE_DEFAULT, lv_color_hex(0xff0000)); //put gray hex color
+		lv_label_set_text(up_label,LV_SYMBOL_MINUS);
+		lv_style_set_bg_color(&style1, lv_color_hex(0x808080)); 
 	}
 	
+	lv_obj_add_style(up_btn, &style1, 0); 
 	lv_obj_center(up_label);
-	lv_obj_add_style(up_btn, LV_PART_MAIN, &style1); 
+
 	
 
 	reset_btn = lv_btn_create(scr1);
@@ -509,6 +514,69 @@ void lv_screen1(void){
 /************************************************************************/
 /* TASKS                                                                */
 /************************************************************************/
+
+static void task_measures(void *pvParameters){
+	RTT_init(FREQ, 0 , RTT_SR_RTTINC);
+	double aro_metros = diameter_value_flag*0.0254;
+	double velocidade_antiga = 0;
+	
+	//style UP speed btn
+	static lv_style_t style1;
+	lv_style_init(&style1);
+	
+	int dt;
+	for (;;){
+		
+		if (xQueueReceive(xQueuePulse,&dt,0)){
+			
+			//printf("\nPEGOU SEMAFORO PULSE\n");
+			// chegou pulso
+			//printf("\ndt atual: %d\n", dt);
+			float freq =  (float) 1/dt;
+			//printf("\nfreq: %f \n", freq);
+			double w = 2.0*PI*freq;
+			//printf("\nw: %f\n", w);
+			double raio = aro_metros/2;
+			double velocidade_inst = w * raio;
+			//printf("\n velocidade_inst: %f\n", velocidade_inst);
+			double velocidade_km_h = velocidade_inst*3.6*1000;
+			printf("\n[VELOCIDADE]: %02f KM/H\n", velocidade_km_h);
+			
+			if (velocidade_km_h >= 99){
+				velocidade_km_h = 0;
+			}
+
+			double aceleracao_inst = (velocidade_km_h - velocidade_antiga) / dt;
+
+			printf("\n[ACELERACAO]: %f M/S^2\n", aceleracao_inst);
+			
+
+			if (aceleracao_inst > 0.0005){
+
+				lv_label_set_text(up_label,LV_SYMBOL_UP);
+				lv_style_set_bg_color(&style1, lv_color_hex(0x7cfc00));
+				
+				
+				}else if (aceleracao_inst < -0.0005){
+				
+				lv_label_set_text(up_label,LV_SYMBOL_DOWN);
+				lv_style_set_bg_color(&style1, lv_color_hex(0xff0000));
+				
+				}else{
+				
+				lv_label_set_text(up_label,LV_SYMBOL_MINUS);
+				lv_style_set_bg_color(&style1, lv_color_hex(0x808080)); 
+			}
+			
+			lv_obj_add_style(up_btn, &style1, 0); 
+			
+			lv_label_set_text_fmt(label_current_speed, "%02d", (int)velocidade_km_h);
+			
+			velocidade_antiga = velocidade_km_h;
+
+		}
+	}
+}
 
 static void task_clock(void *pvParameters) {
 	calendar rtc_initial = {2018, 3, 19, 12, 15, 45 ,1};
@@ -685,7 +753,10 @@ int main(void) {
 
 	xQueuePulse = xQueueCreate(100, sizeof(int));
 
-	/* Create task to control oled */
+	if (xTaskCreate(task_measures, "oled", TASK_MEASURES_STACK_SIZE, NULL, TASK_MEASURES_STACK_PRIORITY, NULL) != pdPASS) {
+		printf("Failed to create measures task\r\n");
+	}
+	
 	if (xTaskCreate(task_lcd, "LCD", TASK_LCD_STACK_SIZE, NULL, TASK_LCD_STACK_PRIORITY, NULL) != pdPASS) {
 		printf("Failed to create lcd task\r\n");
 	}
