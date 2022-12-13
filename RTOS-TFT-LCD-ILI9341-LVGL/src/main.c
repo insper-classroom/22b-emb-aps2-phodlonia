@@ -544,9 +544,9 @@ static void task_measures(void *pvParameters){
 			double velocidade_km_h = velocidade_inst*3.6*1000;
 			printf("\n[VELOCIDADE]: %02f KM/H\n", velocidade_km_h);
 			
-// 			if (velocidade_km_h >= 99){
-// 				velocidade_km_h = 0;
-// 			}
+			if (velocidade_km_h >= 99){
+				velocidade_km_h = 0;
+			}
 
 			double aceleracao_inst = (velocidade_km_h - velocidade_antiga) / dt;
 
