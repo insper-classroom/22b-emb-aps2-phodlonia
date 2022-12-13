@@ -72,6 +72,7 @@ lv_obj_t * up_btn;
 lv_obj_t * up_label;
 lv_obj_t * down_btn;
 lv_obj_t * down_label;
+lv_obj_t * label_distance;
 
 
 //Semaphores
@@ -82,7 +83,7 @@ QueueHandle_t xQueueClk;
 QueueHandle_t xQueuePulse;
 
 //flags
-volatile int diameter_value_flag = 26;
+volatile int diameter_value_flag = 20;
 volatile int acceleration = 0;
 volatile int flag_screen = 0;
 volatile int power = 1;
@@ -105,6 +106,7 @@ typedef struct  {
 } calendar;
 
 void RTC_init(Rtc *rtc, uint32_t id_rtc, calendar t, uint32_t irq_type);
+static void RTT_init(float freqPrescale, uint32_t IrqNPulses, uint32_t rttIRQSource);
 
 volatile float dt = 0;
 
@@ -113,9 +115,9 @@ volatile float dt = 0;
 #define PI 3.142857
 
 //DFINICAO DOS PINOS DOS SENSORES
-#define MAG_PIO				PIOB
-#define MAG_PIO_ID			ID_PIOB
-#define MAG_IDX				3
+#define MAG_PIO				PIOA
+#define MAG_PIO_ID			ID_PIOA
+#define MAG_IDX				19
 #define MAG_IDX_MASK		(1 << MAG_IDX)
 
 //Aqui talvez seja o PA19 do EXT1 para sensor MAG
@@ -212,14 +214,20 @@ void io_init(void)
 	NVIC_SetPriority(MAG_PIO_ID, 4);
 }
 
+
+
 static void RTT_init(float freqPrescale, uint32_t IrqNPulses, uint32_t rttIRQSource) {
 
 	uint16_t pllPreScale = (int) (((float) 32768) / freqPrescale);
+	
+	rtt_sel_source(RTT, false);
+	rtt_init(RTT, pllPreScale);
 	
 	if (rttIRQSource & RTT_MR_ALMIEN) {
 		uint32_t ul_previous_time;
 		ul_previous_time = rtt_read_timer_value(RTT);
 		while (ul_previous_time == rtt_read_timer_value(RTT));
+		rtt_write_alarm_time(RTT, IrqNPulses+ul_previous_time);
 	}
 
 	/* config NVIC */
@@ -228,6 +236,25 @@ static void RTT_init(float freqPrescale, uint32_t IrqNPulses, uint32_t rttIRQSou
 	NVIC_SetPriority(RTT_IRQn, 4);
 	NVIC_EnableIRQ(RTT_IRQn);
 	
+	if (rttIRQSource && (RTT_MR_ALMIEN | RTT_MR_RTTINCIEN)){
+		rtt_enable_interrupt(RTT, rttIRQSource);
+	}else{
+		rtt_disable_interrupt(RTT, RTT_MR_RTTINCIEN | RTT_MR_ALMIEN);
+	}
+	
+}
+
+/************************************************************************/
+/* CALLBACKS                                                               */
+/************************************************************************/
+
+void but_callBack1(void){
+	// chegou pulso
+	
+	int dt = rtt_read_timer_value(RTT);      ;///FREQ;
+	BaseType_t	xHigherPriorityTaskWoken = pdFALSE;
+	xQueueSendFromISR(xQueuePulse,&dt,0);
+	RTT_init(FREQ, 0 , RTT_SR_RTTINC);
 }
 
 void RTC_init(Rtc *rtc, uint32_t id_rtc, calendar t, uint32_t irq_type) {
@@ -330,18 +357,7 @@ static void nothing_handler(lv_event_t * e){
 	}
 }
 
-/************************************************************************/
-/* CALLBACKS                                                               */
-/************************************************************************/
 
-void but_callBack1(void){
-	// chegou pulso
-	
-	//int dt = rtt_read_timer_value(RTT)       ;///FREQ;
-	BaseType_t	xHigherPriorityTaskWoken = pdFALSE;
-	xQueueSendFromISR(xQueuePulse,&dt,0);
-	RTT_init(FREQ, 0 , RTT_SR_RTTINC);
-}
 
 
 
@@ -354,13 +370,6 @@ void lv_screen2(void){
 	
 	char diameter_value_string[100];
 	sprintf(diameter_value_string, "%d", diameter_value_flag);
-	
-
-	//lv_ex_btn_1();
-
-	//lv_obj_t * img = lv_img_create(lv_scr_act());
-	//lv_img_set_src(img, &tela2);
-	//lv_obj_align(img, LV_ALIGN_CENTER, 0, 0);
 	
 	//creating tela de diametro text
 	diameter_label = lv_label_create(scr2);
@@ -430,7 +439,7 @@ void lv_screen1(void){
 
 	// Label hora
 	label_time = lv_label_create(scr1);
-	lv_obj_align(label_time, LV_ALIGN_CENTER, 0, -70);
+	lv_obj_align(label_time, LV_ALIGN_CENTER, 0, -90);
 	lv_obj_set_style_text_font(label_time, LV_FONT_DEFAULT, LV_STATE_DEFAULT);
 	lv_obj_set_style_text_color(label_time, lv_color_black(), LV_STATE_DEFAULT);
 	lv_label_set_text_fmt(label_time, "%s", "13:18:03");
@@ -444,7 +453,7 @@ void lv_screen1(void){
 
 	// CURRENT SPEED UNITS TEXT
 	label_current_speed_unit = lv_label_create(scr1);
-	lv_obj_align_to(label_current_speed_unit, label_current_speed, LV_ALIGN_OUT_RIGHT_BOTTOM, 5, 0);
+	lv_obj_align_to(label_current_speed_unit, label_current_speed, LV_ALIGN_OUT_RIGHT_BOTTOM, 10, 0);
 	lv_obj_set_style_text_font(label_current_speed_unit, LV_FONT_DEFAULT, LV_STATE_DEFAULT);
 	lv_obj_set_style_text_color(label_current_speed_unit, lv_color_black(), LV_STATE_DEFAULT);
 	lv_label_set_text_fmt(label_current_speed_unit, "%s", "km/h");
@@ -521,62 +530,44 @@ static void task_measures(void *pvParameters){
 	RTT_init(FREQ, 0 , RTT_SR_RTTINC);
 	double aro_metros = diameter_value_flag*0.0254;
 	double velocidade_antiga = 0;
-	
+	uint32_t pulsos = 0;
 	//style UP speed btn
 	static lv_style_t style1;
 	lv_style_init(&style1);
-	
+	float dt2 = 0;
+	float raio = 0.508/2;
 	int dt;
+	printf("Entrou");
 	for (;;){
 		
 		if (xQueueReceive(xQueuePulse,&dt,0)){
-			
-			//printf("\nPEGOU SEMAFORO PULSE\n");
-			// chegou pulso
-			//printf("\ndt atual: %d\n", dt);
-			float freq =  (float) 1/dt;
-			//printf("\nfreq: %f \n", freq);
+			dt2 = dt*0.01;
+			float freq =  (float) 1/dt2;
 			double w = 2.0*PI*freq;
-			//printf("\nw: %f\n", w);
-			double raio = aro_metros/2;
 			double velocidade_inst = w * raio;
-			//printf("\n velocidade_inst: %f\n", velocidade_inst);
-			double velocidade_km_h = velocidade_inst*3.6*1000;
-			printf("\n[VELOCIDADE]: %02f KM/H\n", velocidade_km_h);
+			double velocidade_km_h = velocidade_inst*3.6;
 			
 			if (velocidade_km_h >= 99){
 				velocidade_km_h = 0;
 			}
 
 			double aceleracao_inst = (velocidade_km_h - velocidade_antiga) / dt;
-
-			printf("\n[ACELERACAO]: %f M/S^2\n", aceleracao_inst);
 			
-
 			if (aceleracao_inst > 0.0005){
-
 				lv_label_set_text(up_label,LV_SYMBOL_UP);
 				lv_style_set_bg_color(&style1, lv_color_hex(0x7cfc00));
-				
-				
 				}else if (aceleracao_inst < -0.0005){
-				
 				lv_label_set_text(up_label,LV_SYMBOL_DOWN);
 				lv_style_set_bg_color(&style1, lv_color_hex(0xff0000));
-				
 				}else{
-				
 				lv_label_set_text(up_label,LV_SYMBOL_MINUS);
 				lv_style_set_bg_color(&style1, lv_color_hex(0x808080)); 
 			}
-			
 			lv_obj_add_style(up_btn, &style1, 0); 
-			
-			lv_label_set_text_fmt(label_current_speed, "%02d", (int)velocidade_km_h);
-			
+			lv_label_set_text_fmt(label_current_speed, "%.1f", velocidade_km_h);
 			velocidade_antiga = velocidade_km_h;
-
 		}
+		
 	}
 }
 
@@ -585,12 +576,9 @@ static void task_clock(void *pvParameters) {
 	RTC_init(RTC, ID_RTC, rtc_initial, RTC_IER_SECEN);
 
 	for (;;)  {
-		if(xSemaphoreTake(xSemaphoreRTC, 300)){
-			printf("received semmaphore rtc");
+		if(xSemaphoreTake(xSemaphoreRTC, 100)){
 			uint32_t current_hour, current_min, current_sec;
 			rtc_get_time(RTC, &current_hour, &current_min, &current_sec);
-			printf("[RELOGIO] %02d:%02d:%02d\n", current_hour, current_min, current_sec);
-			
 			if(current_sec % 2 == 0){
 				lv_label_set_text_fmt(label_time, "%02d:%02d:%02d", current_hour, current_min, current_sec);
 				} else {
@@ -619,12 +607,7 @@ static void task_lcd(void *pvParameters) {
 	lv_screen2();
 	lv_screen1();
 	
-
 	for (;;)  {
-		// 		if (power == 1){
-		// 			lv_obj_clean(scr1);
-		// 			lv_obj_clean(scr2);
-		// 		}
 		lv_tick_inc(50);
 		lv_task_handler();
 		vTaskDelay(50);
@@ -632,12 +615,10 @@ static void task_lcd(void *pvParameters) {
 }
 
 static void task_rtc(void *pvParameters) {
-	/** Configura RTC */
 	calendar rtc_initial = {2018, 3, 19, 12, 15, 45 ,1};
 	RTC_init(RTC, ID_RTC, rtc_initial, RTC_SR_SEC);
 	int32_t delayticks = 0;
 	int tick = 1;
-
 
 	for (;;)  {
 		if (xQueueReceive(xQueueClk, &delayticks, (TickType_t) 0)){

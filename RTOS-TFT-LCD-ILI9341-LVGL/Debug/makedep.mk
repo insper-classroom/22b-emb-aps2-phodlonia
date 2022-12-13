@@ -2,7 +2,13 @@
 # Automatically-generated file. Do not edit or delete the file
 ################################################################################
 
+src\ASF\sam\drivers\gpbr\gpbr.c
+
 src\ASF\sam\drivers\rtc\rtc.c
+
+src\ASF\sam\drivers\rtt\rtt.c
+
+src\ASF\sam\drivers\tc\tc.c
 
 src\ASF\thirdparty\lvgl8\examples\anim\lv_example_anim_1.c
 
