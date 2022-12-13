@@ -118,6 +118,8 @@ volatile float dt = 0;
 #define MAG_IDX				3
 #define MAG_IDX_MASK		(1 << MAG_IDX)
 
+//Aqui talvez seja o PA19 do EXT1 para sensor MAG
+
 #define PINO_PIOC			PIOC
 #define PINO_ID_PIOC		ID_PIOC
 #define PIOC_IDX			31
@@ -542,9 +544,9 @@ static void task_measures(void *pvParameters){
 			double velocidade_km_h = velocidade_inst*3.6*1000;
 			printf("\n[VELOCIDADE]: %02f KM/H\n", velocidade_km_h);
 			
-			if (velocidade_km_h >= 99){
-				velocidade_km_h = 0;
-			}
+// 			if (velocidade_km_h >= 99){
+// 				velocidade_km_h = 0;
+// 			}
 
 			double aceleracao_inst = (velocidade_km_h - velocidade_antiga) / dt;
 
